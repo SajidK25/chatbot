@@ -12,6 +12,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from supabase import create_client, AsyncClient
+import cohere
 
 load_dotenv()
 
@@ -106,6 +107,8 @@ GENDERS = ["men", "women", "unisex", None]
 
 
 def generate_products(count: int = 500) -> list[dict]:
+    if count <= 0:
+        count = 500
     products = []
     colors = [
         "black",
@@ -167,24 +170,46 @@ def generate_products(count: int = 500) -> list[dict]:
     return products
 
 
-async def generate_embeddings(products: list[dict], client: AsyncOpenAI) -> list[dict]:
+def create_embedding_text(product: dict) -> str:
+    """Combine product fields into a single text for embedding generation."""
+    return f"{product['name']}. {product['description']}. {product['brand']}. {product['category']}"
+
+
+async def generate_embeddings(products: list[dict], client) -> list[dict]:
+    """Generate embeddings for products using Cohere API with retry logic."""
     print(f"Generating embeddings for {len(products)} products...")
 
-    texts = [
-        f"{p['name']}. {p['description']}. {p['brand']}. {p['category']}"
-        for p in products
-    ]
-
+    texts = [create_embedding_text(p) for p in products]
     embeddings = []
     batch_size = 100
+    max_retries = 3
 
     for i in range(0, len(texts), batch_size):
         batch = texts[i : i + batch_size]
-        response = await client.embeddings.create(
-            model="text-embedding-3-small", input=batch, encoding_format="float"
-        )
-        batch_embeddings = [item.embedding for item in response.data]
-        embeddings.extend(batch_embeddings)
+
+        for attempt in range(max_retries):
+            try:
+                response = await client.embed(
+                    model="embed-multilingual-v3.0",
+                    input=batch,
+                    embedding_types=["float"],
+                )
+                # Cohere v6 API returns embeddings as a dict with 'float' key containing list
+                if hasattr(response, "embeddings") and isinstance(
+                    response.embeddings, dict
+                ):
+                    batch_embeddings = response.embeddings.get("float", [])
+                else:
+                    batch_embeddings = []
+                embeddings.extend(batch_embeddings)
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise Exception(
+                        f"Cohere API failed after {max_retries} retries: {e}"
+                    )
+                await asyncio.sleep(2**attempt)
+
         print(
             f"  Embedded batch {i // batch_size + 1}/{(len(texts) - 1) // batch_size + 1}"
         )
@@ -214,20 +239,29 @@ async def insert_products(products: list[dict], supabase: AsyncClient):
 
 async def main():
     import sys
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Generate products with embeddings and insert into Supabase"
+    )
+    parser.add_argument(
+        "--count", type=int, default=500, help="Number of products to generate"
+    )
+    args = parser.parse_args()
 
     if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_SERVICE_KEY"):
         print("Error: SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in .env")
         sys.exit(1)
 
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY must be set in .env")
+    if not os.getenv("COHERE_API_KEY"):
+        print("Error: COHERE_API_KEY must be set in .env")
         sys.exit(1)
 
-    openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    cohere_client = cohere.AsyncClient(api_key=os.getenv("COHERE_API_KEY"))
     supabase = AsyncClient(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 
-    products = generate_products(500)
-    products = await generate_embeddings(products, openai_client)
+    products = generate_products(args.count)
+    products = await generate_embeddings(products, cohere_client)
     await insert_products(products, supabase)
 
     print(f"\nSuccessfully created {len(products)} products with embeddings!")
