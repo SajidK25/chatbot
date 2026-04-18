@@ -387,3 +387,59 @@ class TestLogging:
             await telegram_bot.handle_message(mock_update, mock_context)
 
             assert "error" in caplog.text.lower() or "Error processing" in caplog.text
+
+
+class TestScrapeCommand:
+    """Test /scrape command"""
+
+    @pytest.mark.asyncio
+    async def test_parses_url_from_argument(self):
+        """GIVEN '/scrape https://outopia.com/collections/men' WHEN command received THEN URL extracted"""
+        from src.bots.telegram_bot import scrape_command
+        from unittest.mock import MagicMock
+
+        mock_update = MagicMock()
+        mock_update.message = MagicMock()
+        mock_update.message.reply_text = AsyncMock()
+        mock_context = MagicMock()
+        mock_context.args = ["https://outopia.com/collections/men"]
+
+        await scrape_command(mock_update, mock_context)
+
+        mock_update.message.reply_text.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_shows_usage_without_url(self):
+        """GIVEN '/scrape' WHEN command received THEN 'Usage: /scrape <URL>' returned"""
+        from src.bots.telegram_bot import scrape_command
+        from unittest.mock import MagicMock
+
+        mock_update = MagicMock()
+        mock_update.message = MagicMock()
+        mock_update.message.reply_text = AsyncMock()
+        mock_context = MagicMock()
+        mock_context.args = []
+
+        await scrape_command(mock_update, mock_context)
+
+        mock_update.message.reply_text.assert_called_once()
+        call_args = mock_update.message.reply_text.call_args[0][0]
+        assert "Usage:" in call_args
+
+    @pytest.mark.asyncio
+    async def test_validates_url_format(self):
+        """GIVEN '/scrape not-a-url' WHEN command received THEN 'Invalid URL format' returned"""
+        from src.bots.telegram_bot import scrape_command
+        from unittest.mock import MagicMock
+
+        mock_update = MagicMock()
+        mock_update.message = MagicMock()
+        mock_update.message.reply_text = AsyncMock()
+        mock_context = MagicMock()
+        mock_context.args = ["not-a-url"]
+
+        await scrape_command(mock_update, mock_context)
+
+        mock_update.message.reply_text.assert_called_once()
+        call_args = mock_update.message.reply_text.call_args[0][0]
+        assert "Invalid" in call_args

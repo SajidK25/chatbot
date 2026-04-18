@@ -134,6 +134,40 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}", exc_info=True)
 
 
+async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /scrape command - extract URL and trigger scraping"""
+    message = update.message or update.edited_message
+    if not message:
+        return
+
+    args = context.args
+    if not args:
+        await message.reply_text(
+            "Usage: /scrape <URL>\nExample: /scrape https://outopia.com/collections/men"
+        )
+        return
+
+    url = " ".join(args)
+
+    if not url.startswith(("http://", "https://")):
+        await message.reply_text(
+            "Invalid URL format. Use: https://outopia.com/collections/..."
+        )
+        return
+
+    await message.reply_text(f"Scraping {url}...")
+
+    try:
+        from src.cli import _scrape_and_save
+
+        inserted, updated = await _scrape_and_save(url)
+        await message.reply_text(
+            f"Scraped {inserted + updated} products. {inserted} new, {updated} updated."
+        )
+    except Exception as e:
+        await message.reply_text(f"Error: {str(e)}")
+
+
 def run_telegram_bot():
     import asyncio
 
@@ -142,6 +176,7 @@ def run_telegram_bot():
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("scrape", scrape_command))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
