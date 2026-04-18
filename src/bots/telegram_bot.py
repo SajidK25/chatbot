@@ -15,7 +15,9 @@ from telegram.ext import (
 from src.config import settings
 from src.services.chat_handler import chat_handler
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -140,6 +142,7 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.edited_message
     if not message:
         return
+    logger.info(f"Received /scrape command with args: {context.args}")
 
     args = context.args
     if not args:
@@ -158,7 +161,7 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await message.reply_text(f"Scraping {url}...")
 
-try:
+    try:
         import requests
 
         api_url = os.environ.get("SCRAPE_API_URL", "https://chatbot-bny4.onrender.com")
@@ -169,13 +172,20 @@ try:
             json={"url": url},
             timeout=300,
         )
-        logger.info(f"API response status: {response.status_code}, text: {response.text[:500] if response.text else 'empty'}")
+        logger.info(
+            f"API response status: {response.status_code}, text: {response.text[:500] if response.text else 'empty'}"
+        )
         response.raise_for_status()
         data = response.json()
         logger.info(f"API response data: {data}")
-        await message.reply_text(
-            f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
-        )
+        logger.info("About to send reply to Telegram")
+        try:
+            await message.reply_text(
+                f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
+            )
+            logger.info("Reply sent successfully")
+        except Exception as reply_error:
+            logger.error(f"Failed to send reply: {reply_error}", exc_info=True)
     except requests.HTTPError as e:
         logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
         await message.reply_text(f"API error: {e.response.status_code}")
@@ -185,9 +195,6 @@ try:
 
 
 def run_telegram_bot():
-    import asyncio
-
-    global asyncio
     application = Application.builder().token(settings.telegram_bot_token).build()
 
     application.add_handler(CommandHandler("start", start_command))
@@ -199,7 +206,11 @@ def run_telegram_bot():
     application.add_error_handler(error_handler)
 
     logger.info("Starting Telegram bot...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        logger.error(f"Error in run_polling: {e}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
