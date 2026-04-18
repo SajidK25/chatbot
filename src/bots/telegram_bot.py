@@ -158,24 +158,29 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await message.reply_text(f"Scraping {url}...")
 
-    try:
-        import httpx
+try:
+        import requests
 
         api_url = os.environ.get("SCRAPE_API_URL", "https://chatbot-bny4.onrender.com")
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{api_url}/api/scrape",
-                json={"url": url},
-                timeout=300.0,
-            )
-            logger.info(f"API response status: {response.status_code}")
-            response.raise_for_status()
-            data = response.json()
-            await message.reply_text(
-                f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
-            )
+        logger.info(f"Calling API: {api_url}/api/scrape with URL: {url}")
+
+        response = requests.post(
+            f"{api_url}/api/scrape",
+            json={"url": url},
+            timeout=300,
+        )
+        logger.info(f"API response status: {response.status_code}, text: {response.text[:500] if response.text else 'empty'}")
+        response.raise_for_status()
+        data = response.json()
+        logger.info(f"API response data: {data}")
+        await message.reply_text(
+            f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
+        )
+    except requests.HTTPError as e:
+        logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
+        await message.reply_text(f"API error: {e.response.status_code}")
     except Exception as e:
-        logger.error(f"Scrape error: {e}")
+        logger.error(f"Scrape error: {e}", exc_info=True)
         await message.reply_text(f"Error: {str(e)}")
 
 
