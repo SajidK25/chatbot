@@ -168,12 +168,14 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 json={"url": url},
                 timeout=300.0,
             )
+            logger.info(f"API response status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
             await message.reply_text(
                 f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
             )
     except Exception as e:
+        logger.error(f"Scrape error: {e}")
         await message.reply_text(f"Error: {str(e)}")
 
 
