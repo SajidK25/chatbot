@@ -132,6 +132,34 @@ async def chat(request: Request, req: ChatRequest):
     return {"response": response}
 
 
+class ScrapeRequest(BaseModel):
+    url: str
+    category: str = "uncategorized"
+
+
+class ScrapeResponse(BaseModel):
+    inserted: int
+    updated: int
+    total: int
+
+
+@app.post("/api/scrape", response_model=ScrapeResponse)
+async def api_scrape(request: Request, req: ScrapeRequest):
+    """Scrape products from URL and save to database"""
+    if not req.url.startswith(("http://", "https://")):
+        raise HTTPException(400, "Invalid URL format")
+
+    try:
+        from src.cli import _scrape_and_save
+
+        inserted, updated = await _scrape_and_save(req.url, req.category)
+        return ScrapeResponse(
+            inserted=inserted, updated=updated, total=inserted + updated
+        )
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 app.include_router(whatsapp_router, prefix="/whatsapp", tags=["whatsapp"])
 
 
