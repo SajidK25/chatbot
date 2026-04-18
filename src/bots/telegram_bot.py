@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 from collections import defaultdict
 from telegram import Update
@@ -158,12 +159,20 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await message.reply_text(f"Scraping {url}...")
 
     try:
-        from src.cli import _scrape_and_save
+        import httpx
 
-        inserted, updated = await _scrape_and_save(url)
-        await message.reply_text(
-            f"Scraped {inserted + updated} products. {inserted} new, {updated} updated."
-        )
+        api_url = os.environ.get("SCRAPE_API_URL", "https://chatbot-bny4.onrender.com")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{api_url}/api/scrape",
+                json={"url": url},
+                timeout=300.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            await message.reply_text(
+                f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
+            )
     except Exception as e:
         await message.reply_text(f"Error: {str(e)}")
 
