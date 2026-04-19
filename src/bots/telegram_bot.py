@@ -186,12 +186,13 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def webhook_handler(request: Request):
     """Handle incoming Telegram updates via webhook"""
     try:
-        await application.process_update(
-            Update.de_json(await request.json(), application.bot)
-        )
+        update = Update.de_json(await request.json(), application.bot)
+        logger.info(f"Received update: {update}")
+        await application.process_update(update)
+        logger.info(f"Processed update successfully")
     except Exception as e:
         logger.error(f"Error processing update: {e}", exc_info=True)
-    return Response()
+    return Response(content="OK")
 
 
 async def health_handler(request: Request):
