@@ -227,13 +227,30 @@ def run_polling():
 def run_webhook():
     """Run bot with webhook (for web service)"""
     from fastapi import FastAPI
+    from fastapi.responses import PlainTextResponse
 
     global application
     application = run_telegram_bot()
 
     app = FastAPI()
-    app.add_route("/health", health_handler)
-    app.add_route("/webhook", webhook_handler)
+
+    @app.get("/health")
+    async def health():
+        return PlainTextResponse(content="OK")
+
+    @app.post("/webhook")
+    async def webhook(request: Request):
+        logger.info(f"Webhook called! Method: {request.method}")
+        try:
+            body = await request.json()
+            logger.info(f"Request body: {body}")
+            update = Update.de_json(body, application.bot)
+            logger.info(f"Parsed update: {update}")
+            await application.process_update(update)
+            logger.info(f"Processed update successfully")
+        except Exception as e:
+            logger.error(f"Error processing update: {e}", exc_info=True)
+        return PlainTextResponse(content="OK")
 
     return app
 
