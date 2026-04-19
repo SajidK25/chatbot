@@ -11,11 +11,15 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+from starlette.requests import Request
+from starlette.responses import Response
 
 from src.config import settings
 from src.services.chat_handler import chat_handler
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -140,6 +144,7 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.edited_message
     if not message:
         return
+    logger.info(f"Received /scrape command with args: {context.args}")
 
     args = context.args
     if not args:
@@ -158,36 +163,43 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await message.reply_text(f"Scraping {url}...")
 
-try:
+    try:
         import requests
 
         api_url = os.environ.get("SCRAPE_API_URL", "https://chatbot-bny4.onrender.com")
         logger.info(f"Calling API: {api_url}/api/scrape with URL: {url}")
-
         response = requests.post(
-            f"{api_url}/api/scrape",
-            json={"url": url},
-            timeout=300,
+            f"{api_url}/api/scrape", json={"url": url}, timeout=300
         )
-        logger.info(f"API response status: {response.status_code}, text: {response.text[:500] if response.text else 'empty'}")
+        logger.info(f"API response status: {response.status_code}")
         response.raise_for_status()
         data = response.json()
         logger.info(f"API response data: {data}")
         await message.reply_text(
             f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
         )
-    except requests.HTTPError as e:
-        logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
-        await message.reply_text(f"API error: {e.response.status_code}")
     except Exception as e:
         logger.error(f"Scrape error: {e}", exc_info=True)
         await message.reply_text(f"Error: {str(e)}")
 
 
-def run_telegram_bot():
-    import asyncio
+async def webhook_handler(request: Request):
+    """Handle incoming Telegram updates via webhook"""
+    try:
+        await application.process_update(
+            Update.de_json(await request.json(), application.bot)
+        )
+    except Exception as e:
+        logger.error(f"Error processing update: {e}", exc_info=True)
+    return Response()
 
-    global asyncio
+
+async def health_handler(request: Request):
+    """Health check endpoint"""
+    return Response(text="OK")
+
+
+def run_telegram_bot():
     application = Application.builder().token(settings.telegram_bot_token).build()
 
     application.add_handler(CommandHandler("start", start_command))
@@ -198,9 +210,37 @@ def run_telegram_bot():
     )
     application.add_error_handler(error_handler)
 
-    logger.info("Starting Telegram bot...")
+    return application
+
+
+def run_polling():
+    """Run bot with polling (for local/worker)"""
+    application = run_telegram_bot()
+    logger.info("Starting Telegram bot (polling mode)...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
+def run_webhook():
+    """Run bot with webhook (for web service)"""
+    from fastapi import FastAPI
+
+    global application
+    application = run_telegram_bot()
+
+    app = FastAPI()
+    app.add_route("/health", health_handler)
+    app.add_route("/webhook", webhook_handler)
+
+    return app
+
+
 if __name__ == "__main__":
-    run_telegram_bot()
+    mode = os.environ.get("BOT_MODE", "polling")
+    if mode == "webhook":
+        import uvicorn
+
+        port = int(os.environ.get("PORT", "8000"))
+        app = run_webhook()
+        uvicorn.run(app, host="0.0.0.0", port=port)
+    else:
+        run_polling()
