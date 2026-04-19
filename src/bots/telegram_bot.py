@@ -196,7 +196,7 @@ async def webhook_handler(request: Request):
 
 async def health_handler(request: Request):
     """Health check endpoint"""
-    return Response(text="OK")
+    return Response(content="OK")
 
 
 def run_telegram_bot():
