@@ -11,6 +11,8 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+from starlette.requests import Request
+from starlette.responses import Response
 
 from src.config import settings
 from src.services.chat_handler import chat_handler
@@ -194,6 +196,22 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text(f"Error: {str(e)}")
 
 
+async def webhook_handler(request: Request):
+    """Handle incoming Telegram updates via webhook"""
+    try:
+        await application.process_update(
+            Update.de_json(await request.json(), application.bot)
+        )
+    except Exception as e:
+        logger.error(f"Error processing update: {e}", exc_info=True)
+    return Response()
+
+
+async def health_handler(request: Request):
+    """Health check endpoint"""
+    return Response(text="OK")
+
+
 def run_telegram_bot():
     application = Application.builder().token(settings.telegram_bot_token).build()
 
@@ -205,13 +223,37 @@ def run_telegram_bot():
     )
     application.add_error_handler(error_handler)
 
-    logger.info("Starting Telegram bot...")
-    try:
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
-    except Exception as e:
-        logger.error(f"Error in run_polling: {e}", exc_info=True)
-        raise
+    return application
+
+
+def run_polling():
+    """Run bot with polling (for local/worker)"""
+    application = run_telegram_bot()
+    logger.info("Starting Telegram bot (polling mode)...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+def run_webhook():
+    """Run bot with webhook (for web service)"""
+    from fastapi import FastAPI
+
+    global application
+    application = run_telegram_bot()
+
+    app = FastAPI()
+    app.add_route("/health", health_handler)
+    app.add_route("/webhook", webhook_handler)
+
+    return app
 
 
 if __name__ == "__main__":
-    run_telegram_bot()
+    mode = os.environ.get("BOT_MODE", "polling")
+    if mode == "webhook":
+        import uvicorn
+
+        port = int(os.environ.get("PORT", "8000"))
+        app = run_webhook()
+        uvicorn.run(app, host="0.0.0.0", port=port)
+    else:
+        run_polling()
