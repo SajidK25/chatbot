@@ -168,29 +168,16 @@ async def scrape_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         api_url = os.environ.get("SCRAPE_API_URL", "https://chatbot-bny4.onrender.com")
         logger.info(f"Calling API: {api_url}/api/scrape with URL: {url}")
-
         response = requests.post(
-            f"{api_url}/api/scrape",
-            json={"url": url},
-            timeout=300,
+            f"{api_url}/api/scrape", json={"url": url}, timeout=300
         )
-        logger.info(
-            f"API response status: {response.status_code}, text: {response.text[:500] if response.text else 'empty'}"
-        )
+        logger.info(f"API response status: {response.status_code}")
         response.raise_for_status()
         data = response.json()
         logger.info(f"API response data: {data}")
-        logger.info("About to send reply to Telegram")
-        try:
-            await message.reply_text(
-                f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
-            )
-            logger.info("Reply sent successfully")
-        except Exception as reply_error:
-            logger.error(f"Failed to send reply: {reply_error}", exc_info=True)
-    except requests.HTTPError as e:
-        logger.error(f"HTTP error: {e.response.status_code} - {e.response.text}")
-        await message.reply_text(f"API error: {e.response.status_code}")
+        await message.reply_text(
+            f"Scraped {data['total']} products. {data['inserted']} new, {data['updated']} updated."
+        )
     except Exception as e:
         logger.error(f"Scrape error: {e}", exc_info=True)
         await message.reply_text(f"Error: {str(e)}")
