@@ -115,13 +115,14 @@ class SearchService:
         try:
             response = await self.cohere_client.embed(
                 model="embed-multilingual-v3.0",
-                input=[query],
+                texts=[query],
+                input_type="search_query",
                 embedding_types=["float"],
             )
-            if hasattr(response, "embeddings") and isinstance(
-                response.embeddings, dict
-            ):
-                query_embedding = response.embeddings.get("float", [[]])[0]
+            if hasattr(response.embeddings, "float_") and response.embeddings.float_:
+                query_embedding = response.embeddings.float_[0]
+            elif hasattr(response.embeddings, "float") and response.embeddings.float:
+                query_embedding = response.embeddings.float[0]
             else:
                 return []
         except Exception:

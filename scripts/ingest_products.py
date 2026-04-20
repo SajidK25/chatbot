@@ -10,7 +10,7 @@ import random
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+# from openai import AsyncOpenAI
 from supabase import create_client, AsyncClient
 import cohere
 
@@ -191,14 +191,14 @@ async def generate_embeddings(products: list[dict], client) -> list[dict]:
             try:
                 response = await client.embed(
                     model="embed-multilingual-v3.0",
-                    input=batch,
+                    texts=batch,
+                    input_type="search_document",
                     embedding_types=["float"],
                 )
-                # Cohere v6 API returns embeddings as a dict with 'float' key containing list
-                if hasattr(response, "embeddings") and isinstance(
-                    response.embeddings, dict
-                ):
-                    batch_embeddings = response.embeddings.get("float", [])
+                if hasattr(response.embeddings, "float_") and response.embeddings.float_:
+                    batch_embeddings = response.embeddings.float_
+                elif hasattr(response.embeddings, "float") and response.embeddings.float:
+                    batch_embeddings = response.embeddings.float
                 else:
                     batch_embeddings = []
                 embeddings.extend(batch_embeddings)
@@ -226,13 +226,14 @@ async def insert_products(products: list[dict], supabase: AsyncClient):
     batch_size = 50
     for i in range(0, len(products), batch_size):
         batch = products[i : i + batch_size]
-        response = await supabase.table("products").insert(batch).execute()
-        if response.error:
-            print(f"  Error inserting batch {i // batch_size + 1}: {response.error}")
-        else:
+        try:
+            response = await supabase.table("products").insert(batch).execute()
+            count = len(response.data) if response.data else 0
             print(
-                f"  Inserted batch {i // batch_size + 1}/{(len(products) - 1) // batch_size + 1}"
+                f"  Inserted batch {i // batch_size + 1}/{(len(products) - 1) // batch_size + 1} ({count} rows)"
             )
+        except Exception as e:
+            print(f"  Error inserting batch {i // batch_size + 1}: {e}")
 
     print("Done!")
 

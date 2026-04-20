@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS products (
     product_url TEXT NOT NULL,
     brand TEXT NOT NULL,
     gender TEXT,
-    embedding vector(1536),
+    embedding vector(1024),
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
