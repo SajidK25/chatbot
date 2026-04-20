@@ -66,7 +66,17 @@ def parse_products(html: str) -> list[ScrapedProduct]:
 
 def find_next_page_url(html: str, current_url: str) -> str | None:
     soup = BeautifulSoup(html, "html.parser")
-    next_link = soup.select_one('a[rel="next"], .pagination__next, a:has-text("Next")')
+
+    next_link = soup.select_one('.pagination__item--type-arrow a')
+    if not next_link:
+        next_link = soup.select_one('a[rel="next"]')
+    if not next_link:
+        next_link = soup.select_one('.pagination__next')
+    if not next_link:
+        for link in soup.find_all('a'):
+            if link.get_text(strip=True).lower() in ('next', 'next page'):
+                next_link = link
+                break
 
     if not next_link:
         return None
@@ -78,8 +88,11 @@ def find_next_page_url(html: str, current_url: str) -> str | None:
     if href.startswith("http"):
         return href
 
-    base = current_url.split("?")[0]
-    return f"{base}{href}" if href.startswith("/") else f"{base}?{href}"
+    if href.startswith("/"):
+        scheme_host = "/".join(current_url.split("/")[:3])
+        return f"{scheme_host}{href}"
+
+    return current_url.split("?")[0] + "?" + href
 
 
 def _parse_product_item(item) -> Optional[ScrapedProduct]:
