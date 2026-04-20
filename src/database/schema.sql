@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS products (
     product_url TEXT NOT NULL,
     brand TEXT NOT NULL,
     gender TEXT,
+    sku TEXT UNIQUE,
+    sizes JSONB DEFAULT '[]',
+    colors JSONB DEFAULT '[]',
     embedding vector(1024),
     created_at TIMESTAMPTZ DEFAULT now()
 );

@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 import click
+import cohere
 
+from src.config import settings
 from src.database.supabase_client import get_supabase
 from src.services.scraper import ScrapedProduct, scrape_products
 
@@ -47,11 +49,26 @@ async def _scrape_and_save(url: str, category: str = "uncategorized"):
     click.echo(f"Found {len(products)} products")
 
     supabase = get_supabase()
+    cohere_client = cohere.AsyncClient(api_key=settings.cohere_api_key)
     inserted = 0
     updated = 0
 
+    click.echo("Generating embeddings...")
     for product in products:
         record = _scrape_to_record(product, category)
+
+        try:
+            embedding_text = f"{product.name} {product.description}"
+            response = await cohere_client.embed(
+                model="embed-multilingual-v3.0",
+                texts=[embedding_text],
+                input_type="search_document",
+                embedding_types=["float"],
+            )
+            if hasattr(response.embeddings, "float") and response.embeddings.float:
+                record["embedding"] = response.embeddings.float[0]
+        except Exception as e:
+            click.echo(f"  Warning: embedding failed for {product.name}: {e}")
 
         existing = (
             supabase.table("products").select("id").eq("sku", product.sku).execute()
