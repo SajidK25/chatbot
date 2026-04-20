@@ -226,13 +226,22 @@ def run_polling():
 
 def run_webhook():
     """Run bot with webhook (for web service)"""
+    from contextlib import asynccontextmanager
     from fastapi import FastAPI
     from fastapi.responses import PlainTextResponse
 
     global application
     application = run_telegram_bot()
 
-    app = FastAPI()
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        await application.initialize()
+        await application.start()
+        yield
+        await application.stop()
+        await application.shutdown()
+
+    app = FastAPI(lifespan=lifespan)
 
     @app.get("/health")
     async def health():
