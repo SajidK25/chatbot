@@ -64,6 +64,24 @@ def parse_products(html: str) -> list[ScrapedProduct]:
     return products
 
 
+def find_next_page_url(html: str, current_url: str) -> str | None:
+    soup = BeautifulSoup(html, "html.parser")
+    next_link = soup.select_one('a[rel="next"], .pagination__next, a:has-text("Next")')
+
+    if not next_link:
+        return None
+
+    href = next_link.get("href", "")
+    if not href:
+        return None
+
+    if href.startswith("http"):
+        return href
+
+    base = current_url.split("?")[0]
+    return f"{base}{href}" if href.startswith("/") else f"{base}?{href}"
+
+
 def _parse_product_item(item) -> Optional[ScrapedProduct]:
     title_el = item.select_one(".product-item__title")
     if not title_el:
@@ -143,18 +161,32 @@ async def fetch_page(url: str, config: ScrapingConfig = None) -> str:
 
 
 async def scrape_products(
-    url: str, config: ScrapingConfig = None
+    url: str, config: ScrapingConfig = None, max_pages: int = 5
 ) -> list[ScrapedProduct]:
     config = config or ScrapingConfig()
     validate_url(url)
 
-    html = await fetch_page(url, config)
-    products = parse_products(html)
+    all_products = []
+    current_url = url
+    page_count = 0
 
-    if not products:
-        raise ScrapingError("No products found on page")
+    while current_url and page_count < max_pages:
+        html = await fetch_page(current_url, config)
+        products = parse_products(html)
 
-    return products
+        if not products:
+            break
+
+        all_products.extend(products)
+        page_count += 1
+
+        next_url = find_next_page_url(html, current_url)
+        current_url = next_url
+
+    if not all_products:
+        raise ScrapingError("No products found")
+
+    return all_products
 
 
 async def retry_on_rate_limit(
@@ -182,15 +214,29 @@ class Scraper:
         self.config = config or ScrapingConfig()
         self._last_request_time = 0.0
 
-    async def scrape(self, url: str) -> list[ScrapedProduct]:
+    async def scrape(self, url: str, max_pages: int = 5) -> list[ScrapedProduct]:
         validate_url(url)
 
-        await self._respect_rate_limit()
+        all_products = []
+        current_url = url
+        page_count = 0
 
-        html = await fetch_page(url, self.config)
-        products = parse_products(html)
+        while current_url and page_count < max_pages:
+            await self._respect_rate_limit()
 
-        return products
+            html = await fetch_page(current_url, self.config)
+            products = parse_products(html)
+
+            if not products:
+                break
+
+            all_products.extend(products)
+            page_count += 1
+
+            next_url = find_next_page_url(html, current_url)
+            current_url = next_url
+
+        return all_products
 
     async def _respect_rate_limit(self):
         now = time.time()
